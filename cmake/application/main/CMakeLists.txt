@@ -21,10 +21,19 @@ if (DEFINED BLITZMAX_ESP8266_NATIVE_CMAKE)
     include("${BLITZMAX_ESP8266_NATIVE_CMAKE}")
 endif()
 
+set(BLITZMAX_ESP8266_NETWORK_SOURCES)
+list(FIND BLITZMAX_ESP8266_MODULE_INITIALIZERS
+    "__bb_embedded_network_wifi_wifi" BLITZMAX_ESP8266_WIFI_INDEX)
+if (NOT BLITZMAX_ESP8266_WIFI_INDEX EQUAL -1)
+    list(APPEND BLITZMAX_ESP8266_NETWORK_SOURCES
+        "${ESP8266_MODULE_ROOT}/network.mod/wifi.mod/native/esp8266_wifi.c")
+endif()
+
 set(BLITZMAX_ESP8266_SOURCES
     ${BLITZMAX_GENERATED_C}
     ${BLITZMAX_ESP8266_GENERATED_SOURCES}
     ${BLITZMAX_PICO_NATIVE_SOURCES}
+    ${BLITZMAX_ESP8266_NETWORK_SOURCES}
     "${GENERATED_BOOTSTRAP_C}"
     "${GENERATED_ENTRY_C}"
     "${EMBEDDED_MODULE_ROOT}/runtime.mod/native/embedded_runtime.c"
@@ -46,7 +55,7 @@ idf_component_register(
         "${BLITZMAX_APPLICATION_ROOT}"
         "${BRL_BLITZ_ROOT}"
         "${BRL_BLITZ_ROOT}/ryu"
-    REQUIRES esp8266 freertos newlib pthread)
+    REQUIRES esp8266 esp_event freertos newlib nvs_flash pthread tcpip_adapter)
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     BMX_ESP8266=1

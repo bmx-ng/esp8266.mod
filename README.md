@@ -71,9 +71,9 @@ or the actual executable-containing directories.
 
 The target currently provides the precise embedded collector, managed objects,
 arrays and strings, timing/delay services, standard console output, GPIO,
-board profiles, and the complete `bmk` build/upload workflow. Hardware and
-networking modules will be layered onto this base rather than pretending
-ESP8266 is an ESP32 variant.
+Wi-Fi station/scan support, board profiles, and the complete `bmk`
+build/upload workflow. Additional hardware and networking modules will be
+layered onto this base rather than pretending ESP8266 is an ESP32 variant.
 
 GPIO is available through both `Embedded.Hardware.GPIO` and the target-specific
 `ESP8266.Hardware.GPIO` module. The portable API exposes separate capability
@@ -93,3 +93,10 @@ managed arena. `tests/gpio_led.bmx` and `tests/gpio_capabilities.bmx` cover the
 active-low onboard LED and the ESP8266-specific pin limitations.
 `tests/gpio_events_loopback.bmx` verifies native edge capture and managed event
 delivery with D1 connected to D2.
+
+Wi-Fi applications may use either `Embedded.Network.WiFi` or the familiar
+target facade `ESP8266.Network.WiFi`. Scanning, station association, link-state
+events, IPv4 information, disconnect and teardown use the same portable API as
+Pico and ESP32. The ESP8266 adapter is linked only when the Wi-Fi module is
+imported. See `examples/wifi_scan.bmx`; the missing-network regression is
+`tests/wifi_missing_network.bmx`.
