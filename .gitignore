@@ -1,0 +1,7 @@
+.bmx
+*.bin
+*.elf
+*.map
+sdkconfig
+sdkconfig.old
+build
