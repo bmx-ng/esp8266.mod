@@ -52,6 +52,7 @@ set(BLITZMAX_ESP8266_SOURCES
     "${EMBEDDED_MODULE_ROOT}/runtime.mod/native/embedded_string_float.cpp"
     "${EMBEDDED_MODULE_ROOT}/runtime.mod/native/embedded_unicode.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_adc.c"
+    "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_calendar.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_device.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_events.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_gpio.c"

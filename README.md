@@ -71,7 +71,7 @@ or the actual executable-containing directories.
 
 The target currently provides the precise embedded collector, managed objects,
 arrays and strings, monotonic timing/delay services, light and deep sleep,
-standard console output, persistent
+UTC calendar and NTP synchronization, standard console output, persistent
 flash storage, GPIO, ADC, PWM, I2C, SPI, UART, buffered UART streams, watchdog,
 hardware random numbers, device identity/reset services, Wi-Fi station/scan
 and SoftAP support, TCP/UDP sockets and DNS, MQTT 3.1.1, board profiles, and
@@ -137,7 +137,20 @@ across a warm reboot.
 ## Time and power
 
 `ESP8266.System.Time` mirrors the portable monotonic clock and delay API and
-also reports the current CPU clock. `Embedded.System.Power` and
+also reports the current CPU clock. `ESP8266.System.Calendar` and the portable
+`Embedded.System.Calendar` provide a UTC civil-time clock and an ordinary
+one-shot absolute alarm. The clock is application-initialized, is not retained
+across restart, and accepts dates from 1970 through January 2038 because this
+SDK uses a signed 32-bit `time_t`. ESP8266 calendar alarms cannot wake the chip
+from low-power sleep.
+
+After Wi-Fi is connected, `Embedded.Network.Time` can initialize that calendar
+from NTP. It provides both a bounded one-shot helper and a service-driven client
+for periodic, nonblocking updates. The shared
+[network-time guide](https://github.com/bmx-ng/embedded.mod/tree/master/network.mod/time.mod)
+contains the API details and an example.
+
+`Embedded.System.Power` and
 `ESP8266.System.Power` provide idle, timed light sleep, interrupt wake, and an
 ESP8266-specific GPIO light-sleep helper. Wi-Fi must be stopped before entering
 light sleep.
@@ -270,3 +283,8 @@ plus chunked 8- and 16-bit SPI loopback with D7 connected to D6.
 format and break control using the alternate UART route with D8 connected to
 D7. `tests/watchdog_reset.bmx` verifies a real watchdog-triggered reboot and
 its retained reset reason.
+
+`tests/calendar.bmx` covers calendar validation, set/read, resolution, ordinary
+alarms, event consumption, and the unsupported low-power wake request. The
+credential-local `tests/network_time.local.bmx` exercises live Wi-Fi, NTP,
+calendar update, and read-back without committing network credentials.
