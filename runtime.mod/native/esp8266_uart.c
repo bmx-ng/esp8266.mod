@@ -22,8 +22,14 @@
 typedef struct BMXESP8266UARTState {
     QueueHandle_t event_queue;
     TimerHandle_t async_timer;
+    uint8_t *async_rx_buffer;
+    uint8_t *async_tx_buffer;
     uint32_t async_rx_capacity;
     uint32_t async_tx_capacity;
+    volatile uint32_t async_rx_put;
+    volatile uint32_t async_rx_get;
+    volatile uint32_t async_tx_put;
+    volatile uint32_t async_tx_get;
     uint32_t async_rx_dropped;
     uint32_t async_rx_token;
     uint32_t async_tx_token;
@@ -37,7 +43,6 @@ typedef struct BMXESP8266UARTState {
     uint8_t break_asserted;
     uint8_t async_open;
     volatile uint8_t async_tx_active;
-    volatile uint8_t async_rx_notified;
     volatile int64_t async_tx_deadline;
 } BMXESP8266UARTState;
 
@@ -331,20 +336,84 @@ int32_t bmx_embedded_uart_clear_errors(int32_t controller) {
 }
 
 static int32_t bmx_esp8266_uart_async_tx_complete(int32_t wait) {
+    (void)wait;
     if (!bmx_esp8266_uart.async_tx_active) return 1;
     int64_t now = esp_timer_get_time();
-    if (wait && now < bmx_esp8266_uart.async_tx_deadline) {
-        uint64_t remaining = (uint64_t)(bmx_esp8266_uart.async_tx_deadline - now);
-        uint64_t tick_us = (uint64_t)portTICK_PERIOD_MS * 1000u;
-        TickType_t ticks = (TickType_t)((remaining + tick_us - 1u) / tick_us);
-        if (!ticks) ticks = 1;
-        vTaskDelay(ticks);
-        now = esp_timer_get_time();
-    }
     if (now < bmx_esp8266_uart.async_tx_deadline) return 0;
     bmx_esp8266_uart.async_tx_active = 0;
-    (void)bmx_embedded_event_post(bmx_esp8266_uart.async_tx_token, 0, 0);
     return 1;
+}
+
+static void bmx_esp8266_uart_async_receive(void) {
+    uint8_t input[64];
+    int32_t result;
+    do {
+        result = uart_read_bytes(UART_NUM_0, input, sizeof(input), 0);
+        if (result <= 0) break;
+        portENTER_CRITICAL();
+        int32_t was_empty = bmx_esp8266_uart.async_rx_put ==
+            bmx_esp8266_uart.async_rx_get;
+        for (int32_t index = 0; index < result; ++index) {
+            uint32_t put = bmx_esp8266_uart.async_rx_put;
+            if (put - bmx_esp8266_uart.async_rx_get >=
+                    bmx_esp8266_uart.async_rx_capacity) {
+                if (bmx_esp8266_uart.async_rx_dropped != UINT32_MAX)
+                    ++bmx_esp8266_uart.async_rx_dropped;
+            } else {
+                bmx_esp8266_uart.async_rx_buffer[put &
+                    (bmx_esp8266_uart.async_rx_capacity - 1u)] = input[index];
+                bmx_esp8266_uart.async_rx_put = put + 1u;
+            }
+        }
+        uint32_t available = bmx_esp8266_uart.async_rx_put -
+            bmx_esp8266_uart.async_rx_get;
+        uint32_t token = bmx_esp8266_uart.async_rx_token;
+        portEXIT_CRITICAL();
+        if (was_empty && available)
+            (void)bmx_embedded_event_post(token, available, 0);
+    } while (result == (int32_t)sizeof(input));
+}
+
+static void bmx_esp8266_uart_async_transmit(void) {
+    if (!bmx_esp8266_uart_async_tx_complete(0)) return;
+    uint8_t output[UART_FIFO_LEN];
+    int32_t count = 0;
+    portENTER_CRITICAL();
+    while (count < (int32_t)sizeof(output) &&
+            bmx_esp8266_uart.async_tx_get != bmx_esp8266_uart.async_tx_put) {
+        output[count++] = bmx_esp8266_uart.async_tx_buffer[
+            bmx_esp8266_uart.async_tx_get &
+            (bmx_esp8266_uart.async_tx_capacity - 1u)];
+        ++bmx_esp8266_uart.async_tx_get;
+    }
+    portEXIT_CRITICAL();
+    if (!count) return;
+    /* GPIO-swapped UART0 can retain a stale FIFO count after the shifter has
+       drained. The baud-derived completion deadline proves this is safe. */
+    portENTER_CRITICAL();
+    SET_PERI_REG_MASK(UART_CONF0(UART_NUM_0), UART_TXFIFO_RST);
+    CLEAR_PERI_REG_MASK(UART_CONF0(UART_NUM_0), UART_TXFIFO_RST);
+    portEXIT_CRITICAL();
+    int32_t written = uart_tx_chars(UART_NUM_0, (const char *)output,
+        (uint32_t)count);
+    if (written < count) {
+        portENTER_CRITICAL();
+        bmx_esp8266_uart.async_tx_get -= (uint32_t)(count -
+            (written > 0 ? written : 0));
+        portEXIT_CRITICAL();
+    }
+    if (written <= 0) return;
+    uint32_t baudrate = 0;
+    if (uart_get_baudrate(UART_NUM_0, &baudrate) != ESP_OK || !baudrate) {
+        bmx_esp8266_uart.errors |= BMX_UART_ERROR_OVERRUN;
+        (void)bmx_embedded_event_post(bmx_esp8266_uart.async_error_token,
+            BMX_UART_ERROR_OVERRUN, 0);
+        return;
+    }
+    int64_t duration = ((int64_t)written * 12 * 1000000 + baudrate - 1) /
+        baudrate + 2000;
+    bmx_esp8266_uart.async_tx_deadline = esp_timer_get_time() + duration;
+    bmx_esp8266_uart.async_tx_active = 1;
 }
 
 static void bmx_esp8266_uart_async_service(TimerHandle_t timer) {
@@ -359,17 +428,17 @@ static void bmx_esp8266_uart_async_service(TimerHandle_t timer) {
             ++bmx_esp8266_uart.async_rx_dropped;
         (void)bmx_embedded_event_post(bmx_esp8266_uart.async_error_token, error, 0);
     }
-    size_t available = 0;
-    if (uart_get_buffered_data_len(UART_NUM_0, &available) == ESP_OK && available) {
-        if (!bmx_esp8266_uart.async_rx_notified) {
-            bmx_esp8266_uart.async_rx_notified = 1;
-            (void)bmx_embedded_event_post(bmx_esp8266_uart.async_rx_token,
-                (uint32_t)available, 0);
-        }
-    } else {
-        bmx_esp8266_uart.async_rx_notified = 0;
-    }
-    (void)bmx_esp8266_uart_async_tx_complete(0);
+    bmx_esp8266_uart_async_receive();
+    int32_t was_active = bmx_esp8266_uart.async_tx_active;
+    bmx_esp8266_uart_async_transmit();
+    portENTER_CRITICAL();
+    int32_t tx_empty = bmx_esp8266_uart.async_tx_get ==
+        bmx_esp8266_uart.async_tx_put;
+    int32_t tx_active = bmx_esp8266_uart.async_tx_active;
+    uint32_t tx_token = bmx_esp8266_uart.async_tx_token;
+    portEXIT_CRITICAL();
+    if (was_active && !tx_active && tx_empty)
+        (void)bmx_embedded_event_post(tx_token, 0, 0);
 }
 
 int32_t bmx_embedded_uart_async_open(int32_t controller, uint32_t rx_capacity,
@@ -379,22 +448,40 @@ int32_t bmx_embedded_uart_async_open(int32_t controller, uint32_t rx_capacity,
             rx_capacity < 2u || tx_capacity < 2u || (rx_capacity & (rx_capacity - 1u)) ||
             (tx_capacity & (tx_capacity - 1u)) || !rx_token || !tx_token || !error_token)
         return 0;
+    uint8_t *rx_buffer = pvPortMalloc(rx_capacity);
+    if (!rx_buffer) return 0;
+    uint8_t *tx_buffer = pvPortMalloc(tx_capacity);
+    if (!tx_buffer) {
+        vPortFree(rx_buffer);
+        return 0;
+    }
+    bmx_esp8266_uart.async_rx_buffer = rx_buffer;
+    bmx_esp8266_uart.async_tx_buffer = tx_buffer;
     bmx_esp8266_uart.async_rx_capacity = rx_capacity;
     bmx_esp8266_uart.async_tx_capacity = tx_capacity;
+    bmx_esp8266_uart.async_rx_put = bmx_esp8266_uart.async_rx_get = 0;
+    bmx_esp8266_uart.async_tx_put = bmx_esp8266_uart.async_tx_get = 0;
     bmx_esp8266_uart.async_rx_dropped = 0;
     bmx_esp8266_uart.async_rx_token = rx_token;
     bmx_esp8266_uart.async_tx_token = tx_token;
     bmx_esp8266_uart.async_error_token = error_token;
     bmx_esp8266_uart.async_tx_active = 0;
-    bmx_esp8266_uart.async_rx_notified = 0;
     bmx_esp8266_uart.async_timer = xTimerCreate("bmx-uart", 1, pdTRUE, NULL,
         bmx_esp8266_uart_async_service);
-    if (!bmx_esp8266_uart.async_timer) return 0;
+    if (!bmx_esp8266_uart.async_timer) {
+        vPortFree(rx_buffer);
+        vPortFree(tx_buffer);
+        bmx_esp8266_uart.async_rx_buffer = bmx_esp8266_uart.async_tx_buffer = NULL;
+        return 0;
+    }
     bmx_esp8266_uart.async_open = 1;
     if (xTimerStart(bmx_esp8266_uart.async_timer, portMAX_DELAY) != pdPASS) {
         bmx_esp8266_uart.async_open = 0;
         (void)xTimerDelete(bmx_esp8266_uart.async_timer, portMAX_DELAY);
         bmx_esp8266_uart.async_timer = NULL;
+        vPortFree(rx_buffer);
+        vPortFree(tx_buffer);
+        bmx_esp8266_uart.async_rx_buffer = bmx_esp8266_uart.async_tx_buffer = NULL;
         return 0;
     }
     return 1;
@@ -409,7 +496,14 @@ int32_t bmx_embedded_uart_async_close(int32_t controller) {
         (void)xTimerDelete(bmx_esp8266_uart.async_timer, portMAX_DELAY);
         bmx_esp8266_uart.async_timer = NULL;
     }
+    uint8_t *rx_buffer = bmx_esp8266_uart.async_rx_buffer;
+    uint8_t *tx_buffer = bmx_esp8266_uart.async_tx_buffer;
+    bmx_esp8266_uart.async_rx_buffer = bmx_esp8266_uart.async_tx_buffer = NULL;
     bmx_esp8266_uart.async_rx_capacity = bmx_esp8266_uart.async_tx_capacity = 0;
+    bmx_esp8266_uart.async_rx_put = bmx_esp8266_uart.async_rx_get = 0;
+    bmx_esp8266_uart.async_tx_put = bmx_esp8266_uart.async_tx_get = 0;
+    vPortFree(rx_buffer);
+    vPortFree(tx_buffer);
     return 1;
 }
 int32_t bmx_embedded_uart_async_is_open(int32_t controller) {
@@ -419,12 +513,17 @@ int32_t bmx_embedded_uart_async_read(int32_t controller, void *destination,
         int32_t capacity) {
     if (controller != 0 || !bmx_esp8266_uart.async_open || capacity < 0 ||
             (capacity && !destination)) return BMX_UART_INVALID_ARGUMENT;
-    int32_t count = capacity ? uart_read_bytes(UART_NUM_0, destination,
-        (uint32_t)capacity, 0) : 0;
-    if (count < 0) return -1;
-    size_t available = 0;
-    if (uart_get_buffered_data_len(UART_NUM_0, &available) == ESP_OK && !available)
-        bmx_esp8266_uart.async_rx_notified = 0;
+    uint8_t *bytes = destination;
+    portENTER_CRITICAL();
+    int32_t count = 0;
+    while (count < capacity && bmx_esp8266_uart.async_rx_get !=
+            bmx_esp8266_uart.async_rx_put) {
+        bytes[count++] = bmx_esp8266_uart.async_rx_buffer[
+            bmx_esp8266_uart.async_rx_get &
+            (bmx_esp8266_uart.async_rx_capacity - 1u)];
+        ++bmx_esp8266_uart.async_rx_get;
+    }
+    portEXIT_CRITICAL();
     return count;
 }
 int32_t bmx_embedded_uart_async_write(int32_t controller, const void *source,
@@ -432,50 +531,42 @@ int32_t bmx_embedded_uart_async_write(int32_t controller, const void *source,
     if (controller != 0 || !bmx_esp8266_uart.async_open || length < 0 ||
             (length && !source)) return BMX_UART_INVALID_ARGUMENT;
     if (!length) return 0;
-    /* A second managed Write is specified to wait for native capacity.  Do
-       that with a bounded, baud-derived delay instead of relying on a timer
-       notification that this SDK may fail to dispatch. */
-    if (!bmx_esp8266_uart_async_tx_complete(1)) return 0;
-    int32_t count = length < (int32_t)bmx_esp8266_uart.async_tx_capacity
-        ? length : (int32_t)bmx_esp8266_uart.async_tx_capacity;
-    /* GPIO-swapped UART0 can retain a stale non-zero TX FIFO count after the
-       shifter has drained.  No asynchronous batch is active here, so reset
-       the physically empty FIFO before asking the SDK how much it can fill. */
     portENTER_CRITICAL();
-    SET_PERI_REG_MASK(UART_CONF0(UART_NUM_0), UART_TXFIFO_RST);
-    CLEAR_PERI_REG_MASK(UART_CONF0(UART_NUM_0), UART_TXFIFO_RST);
+    const uint8_t *bytes = source;
+    int32_t count = 0;
+    while (count < length && bmx_esp8266_uart.async_tx_put -
+            bmx_esp8266_uart.async_tx_get < bmx_esp8266_uart.async_tx_capacity) {
+        bmx_esp8266_uart.async_tx_buffer[bmx_esp8266_uart.async_tx_put &
+            (bmx_esp8266_uart.async_tx_capacity - 1u)] = bytes[count++];
+        ++bmx_esp8266_uart.async_tx_put;
+    }
     portEXIT_CRITICAL();
-    /* uart_write_bytes() is a blocking operation when the SDK TX ring is
-       disabled.  In particular, it can wait forever for the TX FIFO
-       semaphore when UART0 uses its swapped GPIO15/GPIO13 route.  The
-       buffered-stream contract requires this entry point to be non-blocking,
-       so fill only the currently available hardware FIFO space. */
-    count = uart_tx_chars(UART_NUM_0, source, (uint32_t)count);
-    if (count < 0) return -1;
-    if (!count) return 0;
-    uint32_t baudrate = 0;
-    if (uart_get_baudrate(UART_NUM_0, &baudrate) != ESP_OK || !baudrate) return -1;
-    int64_t duration = ((int64_t)count * 12 * 1000000 + baudrate - 1) /
-        baudrate + 2000;
-    bmx_esp8266_uart.async_tx_deadline = esp_timer_get_time() + duration;
-    bmx_esp8266_uart.async_tx_active = 1;
     return count;
 }
 uint32_t bmx_embedded_uart_async_read_available(int32_t controller) {
     if (controller != 0 || !bmx_esp8266_uart.async_open) return 0;
-    size_t available = 0;
-    return uart_get_buffered_data_len(UART_NUM_0, &available) == ESP_OK
-        ? (uint32_t)available : 0;
+    portENTER_CRITICAL();
+    uint32_t available = bmx_esp8266_uart.async_rx_put -
+        bmx_esp8266_uart.async_rx_get;
+    portEXIT_CRITICAL();
+    return available;
 }
 uint32_t bmx_embedded_uart_async_write_available(int32_t controller) {
     if (controller != 0 || !bmx_esp8266_uart.async_open) return 0;
-    return bmx_esp8266_uart_async_tx_complete(0)
-        ? bmx_esp8266_uart.async_tx_capacity : 0;
+    portENTER_CRITICAL();
+    uint32_t available = bmx_esp8266_uart.async_tx_capacity -
+        (bmx_esp8266_uart.async_tx_put - bmx_esp8266_uart.async_tx_get);
+    portEXIT_CRITICAL();
+    return available;
 }
 uint32_t bmx_embedded_uart_async_rx_dropped(int32_t controller) {
     return controller == 0 ? bmx_esp8266_uart.async_rx_dropped : 0;
 }
 int32_t bmx_embedded_uart_async_tx_idle(int32_t controller) {
-    return controller != 0 || !bmx_esp8266_uart.async_open ||
-        bmx_esp8266_uart_async_tx_complete(1);
+    if (controller != 0 || !bmx_esp8266_uart.async_open) return 1;
+    portENTER_CRITICAL();
+    int32_t idle = bmx_esp8266_uart.async_tx_put ==
+        bmx_esp8266_uart.async_tx_get && !bmx_esp8266_uart.async_tx_active;
+    portEXIT_CRITICAL();
+    return idle;
 }
