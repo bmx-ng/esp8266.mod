@@ -270,14 +270,16 @@ int32_t bmx_embedded_wifi_start_scan(void) {
     return result;
 }
 
-static wifi_auth_mode_t bmx_wifi_authentication(uint32_t authentication) {
+static wifi_auth_mode_t bmx_wifi_authentication_threshold(
+        uint32_t authentication) {
+    /* ESP-IDF treats this as the weakest accepted mode, not an exact mode. */
     switch (authentication) {
         case 0: return WIFI_AUTH_OPEN;
         case 1: return WIFI_AUTH_WPA_PSK;
         case 2: return WIFI_AUTH_WPA2_PSK;
-        case 3: return WIFI_AUTH_WPA_WPA2_PSK;
+        case 3: return WIFI_AUTH_WPA_PSK;
         case 4: return WIFI_AUTH_WPA3_PSK;
-        case 5: return WIFI_AUTH_WPA2_WPA3_PSK;
+        case 5: return WIFI_AUTH_WPA2_PSK;
         default: return WIFI_AUTH_MAX;
     }
 }
@@ -289,7 +291,7 @@ int32_t bmx_embedded_wifi_connect(const uint8_t *ssid, uint32_t ssid_length,
     if (!ssid || !ssid_length || ssid_length > 32 || password_length > 63 ||
             (password_length && !password)) return ESP_ERR_INVALID_ARG;
     wifi_auth_mode_t auth = password_length
-        ? bmx_wifi_authentication(authentication) : WIFI_AUTH_OPEN;
+        ? bmx_wifi_authentication_threshold(authentication) : WIFI_AUTH_OPEN;
     if (auth == WIFI_AUTH_MAX) return ESP_ERR_INVALID_ARG;
     wifi_config_t config = {0};
     memcpy(config.sta.ssid, ssid, ssid_length);
