@@ -71,10 +71,11 @@ or the actual executable-containing directories.
 
 The target currently provides the precise embedded collector, managed objects,
 arrays and strings, timing/delay services, standard console output, persistent
-flash storage, GPIO, ADC, PWM, I2C, SPI, hardware random numbers, device identity/reset
-services, Wi-Fi station/scan support, TCP/UDP sockets and DNS, board profiles,
-and the complete `bmk` build/upload workflow. Additional hardware modules will
-be layered onto this base rather than pretending ESP8266 is an ESP32 variant.
+flash storage, GPIO, ADC, PWM, I2C, SPI, UART, buffered UART streams, watchdog,
+hardware random numbers, device identity/reset services, Wi-Fi station/scan
+support, TCP/UDP sockets and DNS, board profiles, and the complete `bmk`
+build/upload workflow. Additional hardware modules will be layered onto this
+base rather than pretending ESP8266 is an ESP32 variant.
 
 ## Device, random, ADC, and PWM
 
@@ -110,6 +111,27 @@ bus can serve multiple peripherals. SPI supports 8- and 16-bit transfers, all
 four clock modes, both bit orders, and the SDK's discrete clock rates from
 2 MHz through 80 MHz. Requests are rounded down to the fastest supported rate
 that does not exceed the requested value.
+
+## UART and watchdog
+
+`Embedded.Hardware.UART` and `Embedded.IO.BufferedUART` provide the same
+portable synchronous and interrupt-buffered interfaces used by the other
+embedded targets. `ESP8266.Hardware.UART` adds control of the ESP8266 pin-swap
+route, and `ESP8266.IO.BufferedUART` provides the familiar target facade.
+
+The portable controller is UART0 because it is the ESP8266's only full-duplex
+UART. Its default pins are TX/GPIO1 and RX/GPIO3, shared with the development
+board's USB serial connection and console. Applications that need both a data
+loopback and console output can use the alternate D8/GPIO15 TX and D7/GPIO13 RX
+route. UART1 is TX-only and therefore is not represented as a portable UART
+controller.
+
+`Embedded.Hardware.Watchdog` and `ESP8266.System.Watchdog` expose a configurable
+application deadline. The adapter uses a software timer for the requested
+deadline, retains a one-boot expiry marker, and uses the SDK's safe restart
+path. `WatchdogCausedReboot()` can therefore distinguish an expired application
+watchdog from an ordinary software reset without leaving the SoC watchdog armed
+across a warm reboot.
 
 ## Persistent flash storage
 
@@ -199,3 +221,8 @@ lifecycle on the active-low onboard LED.
 
 `tests/i2c_spi_loopback.bmx` covers I2C lifecycle and missing-device failure,
 plus chunked 8- and 16-bit SPI loopback with D7 connected to D6.
+
+`tests/uart_buffered_loopback.bmx` covers synchronous and buffered transfers,
+format and break control using the alternate UART route with D8 connected to
+D7. `tests/watchdog_reset.bmx` verifies a real watchdog-triggered reboot and
+its retained reset reason.

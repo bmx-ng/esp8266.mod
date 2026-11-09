@@ -118,14 +118,24 @@ uint32_t bmx_embedded_event_dropped(void) {
 }
 
 static SemaphoreHandle_t bmx_esp8266_event_signal(void) {
+    SemaphoreHandle_t signal = bmx_esp8266_deferred_event_signal;
+    if (signal) return signal;
+
+    /* FreeRTOS object creation allocates memory and must not run with
+       interrupts disabled.  Create a candidate first, then publish it under
+       the short critical section.  A racing caller may win publication; in
+       that case discard our unused candidate after leaving the section. */
+    SemaphoreHandle_t candidate = xSemaphoreCreateBinary();
+    if (!candidate) return NULL;
+    taskENTER_CRITICAL();
     if (!bmx_esp8266_deferred_event_signal) {
-        taskENTER_CRITICAL();
-        if (!bmx_esp8266_deferred_event_signal) {
-            bmx_esp8266_deferred_event_signal = xSemaphoreCreateBinary();
-        }
-        taskEXIT_CRITICAL();
+        bmx_esp8266_deferred_event_signal = candidate;
+        candidate = NULL;
     }
-    return bmx_esp8266_deferred_event_signal;
+    signal = bmx_esp8266_deferred_event_signal;
+    taskEXIT_CRITICAL();
+    if (candidate) vSemaphoreDelete(candidate);
+    return signal;
 }
 
 void bmx_embedded_system_wait(void) {
