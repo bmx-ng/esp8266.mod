@@ -70,7 +70,8 @@ or the actual executable-containing directories.
 ## Current scope
 
 The target currently provides the precise embedded collector, managed objects,
-arrays and strings, timing/delay services, standard console output, persistent
+arrays and strings, monotonic timing/delay services, light and deep sleep,
+standard console output, persistent
 flash storage, GPIO, ADC, PWM, I2C, SPI, UART, buffered UART streams, watchdog,
 hardware random numbers, device identity/reset services, Wi-Fi station/scan
 support, TCP/UDP sockets and DNS, board profiles, and the complete `bmk`
@@ -132,6 +133,23 @@ deadline, retains a one-boot expiry marker, and uses the SDK's safe restart
 path. `WatchdogCausedReboot()` can therefore distinguish an expired application
 watchdog from an ordinary software reset without leaving the SoC watchdog armed
 across a warm reboot.
+
+## Time and power
+
+`ESP8266.System.Time` mirrors the portable monotonic clock and delay API and
+also reports the current CPU clock. `Embedded.System.Power` and
+`ESP8266.System.Power` provide idle, timed light sleep, interrupt wake, and an
+ESP8266-specific GPIO light-sleep helper. Wi-Fi must be stopped before entering
+light sleep.
+
+Deep sleep restarts the application rather than returning. A timed deep-sleep
+wake on an ESP-12/D1 Mini requires a physical connection from D0/GPIO16 to RST;
+without that link the chip sleeps until an external reset. The link may
+interfere with automatic flashing on some USB adapters, so disconnect it while
+uploading and reconnect it before entering deep sleep. After wake,
+`DeviceResetReason()` reports `DeviceResetReasonDeepSleep`. Applications should
+close network services before sleeping, and can select the next boot's radio
+calibration policy with `DeepSleepSetRFOption`.
 
 ## Persistent flash storage
 
