@@ -74,9 +74,9 @@ arrays and strings, monotonic timing/delay services, light and deep sleep,
 standard console output, persistent
 flash storage, GPIO, ADC, PWM, I2C, SPI, UART, buffered UART streams, watchdog,
 hardware random numbers, device identity/reset services, Wi-Fi station/scan
-and SoftAP support, TCP/UDP sockets and DNS, board profiles, and the complete `bmk`
-build/upload workflow. Additional hardware modules will be layered onto this
-base rather than pretending ESP8266 is an ESP32 variant.
+and SoftAP support, TCP/UDP sockets and DNS, MQTT 3.1.1, board profiles, and
+the complete `bmk` build/upload workflow. Additional hardware modules will be
+layered onto this base rather than pretending ESP8266 is an ESP32 variant.
 
 ## Device, random, ADC, and PWM
 
@@ -236,6 +236,24 @@ payload transfer, byte accounting, and deferred events.
 `tests/socket_failure.bmx` covers timeout behavior, conflicting binds,
 nonblocking empty reads, repeated event registration, socket reuse, and the
 Wi-Fi teardown guard.
+
+## MQTT
+
+Import `Embedded.Network.MQTT` for the same MQTT 3.1.1 client API used on Pico
+and ESP32. It supports broker authentication, QoS 0/1/2 publishing, retained
+messages, remembered subscriptions, binary payloads, connection events, and
+automatic reconnection. The MQTT adapter is included only when the module is
+imported.
+
+The board must first have a working Wi-Fi connection. Keep calling
+`PollSystem()` or `PollEvent()` to deliver MQTT events and drive managed
+reconnection. The shared module's
+[MQTT guide](https://github.com/bmx-ng/embedded.mod/tree/master/network.mod/mqtt.mod)
+contains complete examples and the API limits.
+
+ESP8266 RTOS SDK 3.4 does not expose incoming QoS or retained flags through
+its receive callback, so those two fields are reported as zero. The current
+adapter uses unencrypted `mqtt://`; MQTT over TLS is not yet exposed.
 
 `tests/storage_persistence.bmx` covers default and explicit path routing, text
 and binary streams, seek and resize, directories, timestamps, rename/delete,

@@ -22,11 +22,22 @@ if (DEFINED BLITZMAX_ESP8266_NATIVE_CMAKE)
 endif()
 
 set(BLITZMAX_ESP8266_NETWORK_SOURCES)
+set(BLITZMAX_ESP8266_NETWORK_REQUIRES)
+set(BLITZMAX_ESP8266_NETWORK_INCLUDE_DIRS)
 list(FIND BLITZMAX_ESP8266_MODULE_INITIALIZERS
     "__bb_embedded_network_wifi_wifi" BLITZMAX_ESP8266_WIFI_INDEX)
 if (NOT BLITZMAX_ESP8266_WIFI_INDEX EQUAL -1)
     list(APPEND BLITZMAX_ESP8266_NETWORK_SOURCES
         "${ESP8266_MODULE_ROOT}/network.mod/wifi.mod/native/esp8266_wifi.c")
+endif()
+list(FIND BLITZMAX_ESP8266_MODULE_INITIALIZERS
+    "__bb_embedded_network_mqtt_mqtt" BLITZMAX_ESP8266_MQTT_INDEX)
+if (NOT BLITZMAX_ESP8266_MQTT_INDEX EQUAL -1)
+    list(APPEND BLITZMAX_ESP8266_NETWORK_SOURCES
+        "${ESP8266_MODULE_ROOT}/network.mod/mqtt.mod/native/esp8266_mqtt.c")
+    list(APPEND BLITZMAX_ESP8266_NETWORK_REQUIRES mqtt)
+    list(APPEND BLITZMAX_ESP8266_NETWORK_INCLUDE_DIRS
+        "${IDF_PATH}/components/mqtt/esp-mqtt/include")
 endif()
 
 set(BLITZMAX_ESP8266_SOURCES
@@ -64,8 +75,9 @@ idf_component_register(
         "${BLITZMAX_APPLICATION_ROOT}"
         "${BRL_BLITZ_ROOT}"
         "${BRL_BLITZ_ROOT}/ryu"
+        ${BLITZMAX_ESP8266_NETWORK_INCLUDE_DIRS}
     REQUIRES esp8266 esp_event fatfs freertos newlib nvs_flash pthread
-        tcpip_adapter wear_levelling)
+        tcpip_adapter wear_levelling ${BLITZMAX_ESP8266_NETWORK_REQUIRES})
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     BMX_EMBEDDED=1
@@ -73,3 +85,6 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     BMX_EMBEDDED_ARENA_SIZE=${BLITZMAX_ESP8266_ARENA_SIZE}
     BMX_EMBEDDED_ARENA_IN_PSRAM=0)
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-unused-function -Wno-unused-variable)
+if (NOT BLITZMAX_ESP8266_MQTT_INDEX EQUAL -1)
+    target_link_libraries(${COMPONENT_LIB} PUBLIC idf::mqtt)
+endif()

@@ -10,3 +10,4 @@ build
 /tests/wifi_credentials.local.bmx
 /tests/wifi_connection.local.bmx
 /tests/wifi_socket.local.bmx
+/tests/mqtt_roundtrip.local.bmx
