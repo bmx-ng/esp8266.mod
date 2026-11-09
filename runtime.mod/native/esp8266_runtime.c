@@ -3,6 +3,7 @@
 
 #include "blitzmax/embedded_runtime.h"
 #include "blitzmax/embedded_time.h"
+#include "esp_clk.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -64,6 +65,11 @@ uint64_t bmx_embedded_time_microseconds(void) {
 
 uint64_t bmx_embedded_time_milliseconds(void) {
     return bmx_embedded_time_microseconds() / 1000u;
+}
+
+uint32_t bmx_esp8266_system_clock_hz(void) {
+    int frequency = esp_clk_cpu_freq();
+    return frequency > 0 ? (uint32_t)frequency : 0u;
 }
 
 void bmx_embedded_sleep_microseconds(uint64_t microseconds) {

@@ -70,11 +70,221 @@ or the actual executable-containing directories.
 ## Current scope
 
 The target currently provides the precise embedded collector, managed objects,
-arrays and strings, timing/delay services, standard console output, board
-profiles, and the complete `bmk` build/upload workflow. Hardware and networking
-modules will be layered onto this base rather than pretending ESP8266 is an
-ESP32 variant.
+arrays and strings, monotonic timing/delay services, light and deep sleep,
+UTC calendar and NTP synchronization, standard console output, persistent
+flash storage, GPIO, ADC, PWM, I2C, SPI, UART, buffered UART streams, watchdog,
+hardware random numbers, device identity/reset services, Wi-Fi station/scan
+and SoftAP support, TCP/UDP sockets and DNS, MQTT 3.1.1, board profiles, and
+the complete `bmk` build/upload workflow. Additional hardware modules will be
+layered onto this base rather than pretending ESP8266 is an ESP32 variant.
+
+## Device, random, ADC, and PWM
+
+Portable applications can import `Embedded.Random`, `Embedded.System.Device`,
+`Embedded.Hardware.ADC`, and `Embedded.Hardware.PWM`. The corresponding
+`ESP8266.*` modules expose the same operations plus useful target details such
+as native heap information, chip revision, the PWM channel number, and the
+shared active-channel count.
+
+The D1 Mini profile names the external analogue input `A0` and represents it as
+pin 17. This is deliberately outside GPIO0–GPIO16 because A0 is not a digital
+GPIO. It is a 10-bit input, but its safe voltage range is board-dependent: bare
+ESP8266 modules commonly expose the chip's lower-voltage input while development
+boards may include a divider. Check the board schematic before applying a
+voltage.
+
+ESP8266 PWM is software-driven and supports up to eight pins, all sharing one
+period. Active pins must therefore use the same requested frequency. Duty uses
+the portable 0–65535 range and the adapter performs the native conversion.
+
+## I2C and SPI
+
+Portable applications can use `Embedded.Hardware.I2C` and
+`Embedded.Hardware.SPI`; the matching `ESP8266.Hardware.*` modules provide
+familiar target facades. The D1 Mini defaults are D2/GPIO4 for I2C SDA and
+D1/GPIO5 for I2C SCL. The ESP8266 RTOS SDK implements its sole I2C master in
+software at a nominal 100 kHz, so faster baud-rate requests are rejected.
+
+The single user-accessible hardware SPI controller has fixed pins: D6/GPIO12
+is MISO, D7/GPIO13 is MOSI, and D5/GPIO14 is the clock. D8/GPIO15 is the
+profile's conventional chip-select, controlled separately through GPIO so one
+bus can serve multiple peripherals. SPI supports 8- and 16-bit transfers, all
+four clock modes, both bit orders, and the SDK's discrete clock rates from
+2 MHz through 80 MHz. Requests are rounded down to the fastest supported rate
+that does not exceed the requested value.
+
+## UART and watchdog
+
+`Embedded.Hardware.UART` and `Embedded.IO.BufferedUART` provide the same
+portable synchronous and interrupt-buffered interfaces used by the other
+embedded targets. `ESP8266.Hardware.UART` adds control of the ESP8266 pin-swap
+route, and `ESP8266.IO.BufferedUART` provides the familiar target facade.
+
+The portable controller is UART0 because it is the ESP8266's only full-duplex
+UART. Its default pins are TX/GPIO1 and RX/GPIO3, shared with the development
+board's USB serial connection and console. Applications that need both a data
+loopback and console output can use the alternate D8/GPIO15 TX and D7/GPIO13 RX
+route. UART1 is TX-only and therefore is not represented as a portable UART
+controller.
+
+`Embedded.Hardware.Watchdog` and `ESP8266.System.Watchdog` expose a configurable
+application deadline. The adapter uses a software timer for the requested
+deadline, retains a one-boot expiry marker, and uses the SDK's safe restart
+path. `WatchdogCausedReboot()` can therefore distinguish an expired application
+watchdog from an ordinary software reset without leaving the SoC watchdog armed
+across a warm reboot.
+
+## Time and power
+
+`ESP8266.System.Time` mirrors the portable monotonic clock and delay API and
+also reports the current CPU clock. `ESP8266.System.Calendar` and the portable
+`Embedded.System.Calendar` provide a UTC civil-time clock and an ordinary
+one-shot absolute alarm. The clock is application-initialized, is not retained
+across restart, and accepts dates from 1970 through January 2038 because this
+SDK uses a signed 32-bit `time_t`. ESP8266 calendar alarms cannot wake the chip
+from low-power sleep.
+
+After Wi-Fi is connected, `Embedded.Network.Time` can initialize that calendar
+from NTP. It provides both a bounded one-shot helper and a service-driven client
+for periodic, nonblocking updates. The shared
+[network-time guide](https://github.com/bmx-ng/embedded.mod/tree/master/network.mod/time.mod)
+contains the API details and an example.
+
+`Embedded.System.Power` and
+`ESP8266.System.Power` provide idle, timed light sleep, interrupt wake, and an
+ESP8266-specific GPIO light-sleep helper. Wi-Fi must be stopped before entering
+light sleep.
+
+Deep sleep restarts the application rather than returning. A timed deep-sleep
+wake on an ESP-12/D1 Mini requires a physical connection from D0/GPIO16 to RST;
+without that link the chip sleeps until an external reset. The link may
+interfere with automatic flashing on some USB adapters, so disconnect it while
+uploading and reconnect it before entering deep sleep. After wake,
+`DeviceResetReason()` reports `DeviceResetReasonDeepSleep`. Applications should
+close network services before sleeping, and can select the next boot's radio
+calibration policy with `DeepSleepSetRFOption`.
+
+## Persistent flash storage
+
+Import `ESP8266.Storage.FATFS` to mount the internal wear-levelled filesystem
+and make it the default `BRL.FileSystem` volume:
+
+```blitzmax
+SuperStrict
+
+Framework BRL.StandardIO
+Import BRL.FileSystem
+Import BRL.TextStream
+Import ESP8266.Storage.FATFS
+
+CreateDir "settings"
+SaveText "configured", "settings/state.txt"
+Print LoadText("settings/state.txt")
+```
+
+Ordinary paths and `file::` use the mounted default. `flash::` and `fatfs::`
+address it explicitly, so these refer to the same file:
+
+```text
+settings/state.txt
+file::settings/state.txt
+flash::settings/state.txt
+fatfs::settings/state.txt
+```
+
+The generic 4 MiB profile reserves 960 KiB for the application and 3 MiB for
+storage. The filesystem supports directories, long filenames, timestamps,
+seekable streams, and the usual `BRL.FileSystem` operations. Completely erased
+storage is formatted automatically on its first mount; unrecognised nonblank
+data is left untouched. `FormatFATFS()` explicitly erases and reformats the
+volume, so use it only when losing every stored file is intended.
+
+`MountFATFS()`, `UnmountFATFS()`, `FATFSIsMounted()`, `FATFSCapacity()`, and
+`FATFSFree()` provide lifecycle and capacity information. Uploading a new
+application does not erase the storage partition.
+
+GPIO is available through both `Embedded.Hardware.GPIO` and the target-specific
+`ESP8266.Hardware.GPIO` module. The portable API exposes separate capability
+queries for pull-up, pull-down, drive-strength configuration, and interrupts.
+This matters on ESP8266: GPIO6–11 are occupied by flash, ordinary GPIOs provide
+pull-up only, and GPIO16 provides pull-down but no GPIO interrupt.
+
+Managed GPIO interrupt delivery is available through
+`ESP8266.Hardware.GPIOEvents` (or the portable
+`Embedded.Hardware.GPIOEvents`). Interrupts are timestamped in native code and
+deferred through `BRL.EventQueue`; managed objects are never touched directly
+from the interrupt handler.
 
 `tests/managed_allocation.bmx` is the initial on-device regression covering
 objects, arrays, strings, reclamation, and console output in the default 12 KiB
-managed arena.
+managed arena. `tests/gpio_led.bmx` and `tests/gpio_capabilities.bmx` cover the
+active-low onboard LED and the ESP8266-specific pin limitations.
+`tests/gpio_events_loopback.bmx` verifies native edge capture and managed event
+delivery with D1 connected to D2.
+
+Wi-Fi applications may use either `Embedded.Network.WiFi` or the familiar
+target facade `ESP8266.Network.WiFi`. Scanning, station association, link-state
+events, IPv4 information, disconnect and teardown use the same portable API as
+Pico and ESP32. The ESP8266 adapter is linked only when the Wi-Fi module is
+imported. See `examples/wifi_scan.bmx`; the missing-network regression is
+`tests/wifi_missing_network.bmx`.
+
+`ESP8266.Network.WiFi` also provides the familiar target SoftAP API:
+`WiFiStartAccessPoint`, `WiFiStopAccessPoint`, active/client queries, and AP
+IPv4 address information. SoftAP uses simultaneous station/AP mode, so station
+scans and connections remain available while the access point is running. The
+ESP8266 supports at most four associated clients. `tests/wifi_softap.bmx`
+covers security validation, addressing, station/AP coexistence, and clean
+shutdown.
+
+Network applications use the standard `BRL.Socket` API. IPv4 DNS, UDP and TCP
+support blocking and nonblocking I/O, listener timeouts, byte-availability
+queries, and deferred readable, writable, accept, close, and error events via
+`BRL.EventQueue`. IPv6 is not exposed because ESP8266 RTOS SDK 3.4 builds lwIP
+without it. Wi-Fi teardown is rejected while a socket is active, preventing
+the network stack from being dismantled beneath live connections.
+
+`tests/socket_loopback.bmx` covers UDP and TCP loopback, listener acceptance,
+payload transfer, byte accounting, and deferred events.
+`tests/socket_failure.bmx` covers timeout behavior, conflicting binds,
+nonblocking empty reads, repeated event registration, socket reuse, and the
+Wi-Fi teardown guard.
+
+## MQTT
+
+Import `Embedded.Network.MQTT` for the same MQTT 3.1.1 client API used on Pico
+and ESP32. It supports broker authentication, QoS 0/1/2 publishing, retained
+messages, remembered subscriptions, binary payloads, connection events, and
+automatic reconnection. The MQTT adapter is included only when the module is
+imported.
+
+The board must first have a working Wi-Fi connection. Keep calling
+`PollSystem()` or `PollEvent()` to deliver MQTT events and drive managed
+reconnection. The shared module's
+[MQTT guide](https://github.com/bmx-ng/embedded.mod/tree/master/network.mod/mqtt.mod)
+contains complete examples and the API limits.
+
+ESP8266 RTOS SDK 3.4 does not expose incoming QoS or retained flags through
+its receive callback, so those two fields are reported as zero. The current
+adapter uses unencrypted `mqtt://`; MQTT over TLS is not yet exposed.
+
+`tests/storage_persistence.bmx` covers default and explicit path routing, text
+and binary streams, seek and resize, directories, timestamps, rename/delete,
+unmount/remount, and persistence across device resets.
+
+`tests/random_device_adc_pwm.bmx` covers hardware random data, the MAC-derived
+device identifier, reset/chip information, A0 conversion, and the portable PWM
+lifecycle on the active-low onboard LED.
+
+`tests/i2c_spi_loopback.bmx` covers I2C lifecycle and missing-device failure,
+plus chunked 8- and 16-bit SPI loopback with D7 connected to D6.
+
+`tests/uart_buffered_loopback.bmx` covers synchronous and buffered transfers,
+format and break control using the alternate UART route with D8 connected to
+D7. `tests/watchdog_reset.bmx` verifies a real watchdog-triggered reboot and
+its retained reset reason.
+
+`tests/calendar.bmx` covers calendar validation, set/read, resolution, ordinary
+alarms, event consumption, and the unsupported low-power wake request. The
+credential-local `tests/network_time.local.bmx` exercises live Wi-Fi, NTP,
+calendar update, and read-back without committing network credentials.
