@@ -70,10 +70,50 @@ or the actual executable-containing directories.
 ## Current scope
 
 The target currently provides the precise embedded collector, managed objects,
-arrays and strings, timing/delay services, standard console output, GPIO,
-Wi-Fi station/scan support, TCP/UDP sockets and DNS, board profiles, and the
-complete `bmk` build/upload workflow. Additional hardware modules will be
-layered onto this base rather than pretending ESP8266 is an ESP32 variant.
+arrays and strings, timing/delay services, standard console output, persistent
+flash storage, GPIO, Wi-Fi station/scan support, TCP/UDP sockets and DNS, board
+profiles, and the complete `bmk` build/upload workflow. Additional hardware
+modules will be layered onto this base rather than pretending ESP8266 is an
+ESP32 variant.
+
+## Persistent flash storage
+
+Import `ESP8266.Storage.FATFS` to mount the internal wear-levelled filesystem
+and make it the default `BRL.FileSystem` volume:
+
+```blitzmax
+SuperStrict
+
+Framework BRL.StandardIO
+Import BRL.FileSystem
+Import BRL.TextStream
+Import ESP8266.Storage.FATFS
+
+CreateDir "settings"
+SaveText "configured", "settings/state.txt"
+Print LoadText("settings/state.txt")
+```
+
+Ordinary paths and `file::` use the mounted default. `flash::` and `fatfs::`
+address it explicitly, so these refer to the same file:
+
+```text
+settings/state.txt
+file::settings/state.txt
+flash::settings/state.txt
+fatfs::settings/state.txt
+```
+
+The generic 4 MiB profile reserves 960 KiB for the application and 3 MiB for
+storage. The filesystem supports directories, long filenames, timestamps,
+seekable streams, and the usual `BRL.FileSystem` operations. Completely erased
+storage is formatted automatically on its first mount; unrecognised nonblank
+data is left untouched. `FormatFATFS()` explicitly erases and reformats the
+volume, so use it only when losing every stored file is intended.
+
+`MountFATFS()`, `UnmountFATFS()`, `FATFSIsMounted()`, `FATFSCapacity()`, and
+`FATFSFree()` provide lifecycle and capacity information. Uploading a new
+application does not erase the storage partition.
 
 GPIO is available through both `Embedded.Hardware.GPIO` and the target-specific
 `ESP8266.Hardware.GPIO` module. The portable API exposes separate capability
@@ -113,3 +153,7 @@ payload transfer, byte accounting, and deferred events.
 `tests/socket_failure.bmx` covers timeout behavior, conflicting binds,
 nonblocking empty reads, repeated event registration, socket reuse, and the
 Wi-Fi teardown guard.
+
+`tests/storage_persistence.bmx` covers default and explicit path routing, text
+and binary streams, seek and resize, directories, timestamps, rename/delete,
+unmount/remount, and persistence across device resets.

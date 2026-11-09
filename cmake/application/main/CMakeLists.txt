@@ -55,7 +55,8 @@ idf_component_register(
         "${BLITZMAX_APPLICATION_ROOT}"
         "${BRL_BLITZ_ROOT}"
         "${BRL_BLITZ_ROOT}/ryu"
-    REQUIRES esp8266 esp_event freertos newlib nvs_flash pthread tcpip_adapter)
+    REQUIRES esp8266 esp_event fatfs freertos newlib nvs_flash pthread
+        tcpip_adapter wear_levelling)
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     BMX_EMBEDDED=1
