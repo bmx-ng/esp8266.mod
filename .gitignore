@@ -1,4 +1,6 @@
 .bmx
+*.i
+*.i2
 *.bin
 *.elf
 *.map

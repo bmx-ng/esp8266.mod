@@ -70,11 +70,18 @@ or the actual executable-containing directories.
 ## Current scope
 
 The target currently provides the precise embedded collector, managed objects,
-arrays and strings, timing/delay services, standard console output, board
-profiles, and the complete `bmk` build/upload workflow. Hardware and networking
-modules will be layered onto this base rather than pretending ESP8266 is an
-ESP32 variant.
+arrays and strings, timing/delay services, standard console output, GPIO,
+board profiles, and the complete `bmk` build/upload workflow. Hardware and
+networking modules will be layered onto this base rather than pretending
+ESP8266 is an ESP32 variant.
+
+GPIO is available through both `Embedded.Hardware.GPIO` and the target-specific
+`ESP8266.Hardware.GPIO` module. The portable API exposes separate capability
+queries for pull-up, pull-down, drive-strength configuration, and interrupts.
+This matters on ESP8266: GPIO6–11 are occupied by flash, ordinary GPIOs provide
+pull-up only, and GPIO16 provides pull-down but no GPIO interrupt.
 
 `tests/managed_allocation.bmx` is the initial on-device regression covering
 objects, arrays, strings, reclamation, and console output in the default 12 KiB
-managed arena.
+managed arena. `tests/gpio_led.bmx` and `tests/gpio_capabilities.bmx` cover the
+active-low onboard LED and the ESP8266-specific pin limitations.
