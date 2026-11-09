@@ -71,7 +71,7 @@ or the actual executable-containing directories.
 
 The target currently provides the precise embedded collector, managed objects,
 arrays and strings, timing/delay services, standard console output, persistent
-flash storage, GPIO, ADC, PWM, hardware random numbers, device identity/reset
+flash storage, GPIO, ADC, PWM, I2C, SPI, hardware random numbers, device identity/reset
 services, Wi-Fi station/scan support, TCP/UDP sockets and DNS, board profiles,
 and the complete `bmk` build/upload workflow. Additional hardware modules will
 be layered onto this base rather than pretending ESP8266 is an ESP32 variant.
@@ -94,6 +94,22 @@ voltage.
 ESP8266 PWM is software-driven and supports up to eight pins, all sharing one
 period. Active pins must therefore use the same requested frequency. Duty uses
 the portable 0–65535 range and the adapter performs the native conversion.
+
+## I2C and SPI
+
+Portable applications can use `Embedded.Hardware.I2C` and
+`Embedded.Hardware.SPI`; the matching `ESP8266.Hardware.*` modules provide
+familiar target facades. The D1 Mini defaults are D2/GPIO4 for I2C SDA and
+D1/GPIO5 for I2C SCL. The ESP8266 RTOS SDK implements its sole I2C master in
+software at a nominal 100 kHz, so faster baud-rate requests are rejected.
+
+The single user-accessible hardware SPI controller has fixed pins: D6/GPIO12
+is MISO, D7/GPIO13 is MOSI, and D5/GPIO14 is the clock. D8/GPIO15 is the
+profile's conventional chip-select, controlled separately through GPIO so one
+bus can serve multiple peripherals. SPI supports 8- and 16-bit transfers, all
+four clock modes, both bit orders, and the SDK's discrete clock rates from
+2 MHz through 80 MHz. Requests are rounded down to the fastest supported rate
+that does not exceed the requested value.
 
 ## Persistent flash storage
 
@@ -180,3 +196,6 @@ unmount/remount, and persistence across device resets.
 `tests/random_device_adc_pwm.bmx` covers hardware random data, the MAC-derived
 device identifier, reset/chip information, A0 conversion, and the portable PWM
 lifecycle on the active-low onboard LED.
+
+`tests/i2c_spi_loopback.bmx` covers I2C lifecycle and missing-device failure,
+plus chunked 8- and 16-bit SPI loopback with D7 connected to D6.

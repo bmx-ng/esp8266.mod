@@ -44,9 +44,12 @@ set(BLITZMAX_ESP8266_SOURCES
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_device.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_events.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_gpio.c"
+    "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_i2c.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_pwm.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_random.c"
     "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_runtime.c"
+    "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_spi.c"
+    "${ESP8266_MODULE_ROOT}/runtime.mod/native/esp8266_watchdog.c"
     "${BRL_BLITZ_ROOT}/ryu/ryu/f2s.c"
     "${BRL_BLITZ_ROOT}/ryu/ryu/d2s.c")
 
