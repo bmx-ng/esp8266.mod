@@ -1,7 +1,9 @@
 #include <stdint.h>
 
+#include "blitzmax/embedded_events.h"
 #include "blitzmax/embedded_gpio.h"
 #include "driver/gpio.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -16,6 +18,7 @@ static uint8_t bmx_esp8266_gpio_output[BMX_ESP8266_GPIO_COUNT];
 static uint8_t bmx_esp8266_gpio_pull_up[BMX_ESP8266_GPIO_COUNT];
 static uint8_t bmx_esp8266_gpio_pull_down[BMX_ESP8266_GPIO_COUNT];
 static volatile uint32_t bmx_esp8266_gpio_irq_events[BMX_ESP8266_GPIO_COUNT];
+static volatile uint32_t bmx_esp8266_gpio_event_tokens[BMX_ESP8266_GPIO_COUNT];
 static volatile uint32_t bmx_esp8266_gpio_irq_masks[BMX_ESP8266_GPIO_COUNT];
 static uint8_t bmx_esp8266_gpio_isr_ready;
 
@@ -64,6 +67,7 @@ int32_t bmx_embedded_gpio_init(uint32_t gpio) {
     bmx_esp8266_gpio_pull_up[gpio] = 0;
     bmx_esp8266_gpio_pull_down[gpio] = 0;
     bmx_esp8266_gpio_irq_events[gpio] = 0;
+    bmx_esp8266_gpio_event_tokens[gpio] = 0;
     bmx_esp8266_gpio_irq_masks[gpio] = 0;
     return 1;
 }
@@ -165,9 +169,13 @@ static void bmx_esp8266_gpio_interrupt(void *context) {
     if (mask == (BMX_GPIO_IRQ_EDGE_FALL | BMX_GPIO_IRQ_EDGE_RISE)) {
         events = gpio_get_level((gpio_num_t)gpio) ? BMX_GPIO_IRQ_EDGE_RISE : BMX_GPIO_IRQ_EDGE_FALL;
     }
+    uint64_t captured_time = (uint64_t)esp_timer_get_time();
     UBaseType_t state = taskENTER_CRITICAL_FROM_ISR();
     bmx_esp8266_gpio_irq_events[gpio] |= events;
+    uint32_t token = bmx_esp8266_gpio_event_tokens[gpio];
     taskEXIT_CRITICAL_FROM_ISR(state);
+    (void)bmx_embedded_event_post_from_isr_ex(token, events, gpio,
+        (uint32_t)captured_time, (uint32_t)(captured_time >> 32u));
 }
 
 int32_t bmx_embedded_gpio_set_irq_enabled(uint32_t gpio, uint32_t mask, int32_t enabled) {
@@ -199,7 +207,16 @@ int32_t bmx_embedded_gpio_set_irq_enabled(uint32_t gpio, uint32_t mask, int32_t 
 }
 
 int32_t bmx_embedded_gpio_set_event_token(uint32_t gpio, uint32_t token) {
-    return bmx_embedded_gpio_is_valid(gpio) && token == 0;
+    if (!bmx_embedded_gpio_is_irq_capable(gpio)) return 0;
+    taskENTER_CRITICAL();
+    if (token && bmx_esp8266_gpio_event_tokens[gpio] &&
+            bmx_esp8266_gpio_event_tokens[gpio] != token) {
+        taskEXIT_CRITICAL();
+        return 0;
+    }
+    bmx_esp8266_gpio_event_tokens[gpio] = token;
+    taskEXIT_CRITICAL();
+    return 1;
 }
 
 uint32_t bmx_embedded_gpio_pending_irq_events(uint32_t gpio) {

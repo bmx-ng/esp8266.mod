@@ -81,7 +81,15 @@ queries for pull-up, pull-down, drive-strength configuration, and interrupts.
 This matters on ESP8266: GPIO6–11 are occupied by flash, ordinary GPIOs provide
 pull-up only, and GPIO16 provides pull-down but no GPIO interrupt.
 
+Managed GPIO interrupt delivery is available through
+`ESP8266.Hardware.GPIOEvents` (or the portable
+`Embedded.Hardware.GPIOEvents`). Interrupts are timestamped in native code and
+deferred through `BRL.EventQueue`; managed objects are never touched directly
+from the interrupt handler.
+
 `tests/managed_allocation.bmx` is the initial on-device regression covering
 objects, arrays, strings, reclamation, and console output in the default 12 KiB
 managed arena. `tests/gpio_led.bmx` and `tests/gpio_capabilities.bmx` cover the
 active-low onboard LED and the ESP8266-specific pin limitations.
+`tests/gpio_events_loopback.bmx` verifies native edge capture and managed event
+delivery with D1 connected to D2.
