@@ -74,7 +74,7 @@ arrays and strings, monotonic timing/delay services, light and deep sleep,
 standard console output, persistent
 flash storage, GPIO, ADC, PWM, I2C, SPI, UART, buffered UART streams, watchdog,
 hardware random numbers, device identity/reset services, Wi-Fi station/scan
-support, TCP/UDP sockets and DNS, board profiles, and the complete `bmk`
+and SoftAP support, TCP/UDP sockets and DNS, board profiles, and the complete `bmk`
 build/upload workflow. Additional hardware modules will be layered onto this
 base rather than pretending ESP8266 is an ESP32 variant.
 
@@ -215,6 +215,14 @@ events, IPv4 information, disconnect and teardown use the same portable API as
 Pico and ESP32. The ESP8266 adapter is linked only when the Wi-Fi module is
 imported. See `examples/wifi_scan.bmx`; the missing-network regression is
 `tests/wifi_missing_network.bmx`.
+
+`ESP8266.Network.WiFi` also provides the familiar target SoftAP API:
+`WiFiStartAccessPoint`, `WiFiStopAccessPoint`, active/client queries, and AP
+IPv4 address information. SoftAP uses simultaneous station/AP mode, so station
+scans and connections remain available while the access point is running. The
+ESP8266 supports at most four associated clients. `tests/wifi_softap.bmx`
+covers security validation, addressing, station/AP coexistence, and clean
+shutdown.
 
 Network applications use the standard `BRL.Socket` API. IPv4 DNS, UDP and TCP
 support blocking and nonblocking I/O, listener timeouts, byte-availability

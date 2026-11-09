@@ -48,6 +48,7 @@ static volatile uint32_t bmx_wifi_dropped;
 static volatile bool bmx_wifi_initialized;
 static volatile bool bmx_wifi_scan_active;
 static volatile bool bmx_wifi_explicit_disconnect;
+static volatile bool bmx_wifi_ap_active;
 static volatile int32_t bmx_wifi_link_status;
 
 extern uint32_t bmx_embedded_net_active_socket_count(void)
@@ -228,6 +229,7 @@ int32_t bmx_embedded_wifi_initialize(uint32_t country_code) {
     bmx_wifi_dropped = 0;
     bmx_wifi_scan_active = false;
     bmx_wifi_explicit_disconnect = false;
+    bmx_wifi_ap_active = false;
     bmx_wifi_link_status = BMX_WIFI_LINK_DOWN;
     bmx_wifi_initialized = true;
     return ESP_OK;
@@ -257,6 +259,7 @@ int32_t bmx_embedded_wifi_deinitialize(void) {
     result = esp_wifi_deinit();
     if (result != ESP_OK) return result;
     bmx_wifi_initialized = false;
+    bmx_wifi_ap_active = false;
     bmx_wifi_event_put = bmx_wifi_event_get = 0;
     bmx_wifi_link_status = BMX_WIFI_LINK_DOWN;
     return ESP_OK;
@@ -381,4 +384,97 @@ uint32_t bmx_embedded_wifi_dropped_events(void) {
     dropped = bmx_wifi_dropped;
     taskEXIT_CRITICAL();
     return dropped;
+}
+
+static wifi_auth_mode_t bmx_wifi_ap_authentication(uint32_t authentication) {
+    switch (authentication) {
+        case 0: return WIFI_AUTH_OPEN;
+        case 1: return WIFI_AUTH_WPA_PSK;
+        case 2: return WIFI_AUTH_WPA2_PSK;
+        case 3: return WIFI_AUTH_WPA_WPA2_PSK;
+        case 4: return WIFI_AUTH_WPA3_PSK;
+        case 5: return WIFI_AUTH_WPA2_WPA3_PSK;
+        default: return WIFI_AUTH_MAX;
+    }
+}
+
+int32_t bmx_esp8266_wifi_start_access_point(const uint8_t *ssid,
+        uint32_t ssid_length, const uint8_t *password, uint32_t password_length,
+        uint32_t authentication, uint32_t channel, uint32_t maximum_connections,
+        int32_t hidden) {
+    if (!bmx_wifi_initialized) return ESP_ERR_WIFI_NOT_INIT;
+    if (!ssid || !ssid_length || ssid_length > 32 || password_length > 63 ||
+            (password_length && !password) || channel < 1 || channel > 14 ||
+            !maximum_connections || maximum_connections > 4)
+        return ESP_ERR_INVALID_ARG;
+    wifi_auth_mode_t auth = bmx_wifi_ap_authentication(authentication);
+    if (auth == WIFI_AUTH_MAX || auth == WIFI_AUTH_WEP ||
+            (auth == WIFI_AUTH_OPEN && password_length) ||
+            (auth != WIFI_AUTH_OPEN && password_length < 8))
+        return ESP_ERR_INVALID_ARG;
+    wifi_config_t config = {0};
+    memcpy(config.ap.ssid, ssid, ssid_length);
+    config.ap.ssid_len = (uint8_t)ssid_length;
+    if (password_length)
+        memcpy(config.ap.password, password, password_length);
+    config.ap.channel = (uint8_t)channel;
+    config.ap.authmode = auth;
+    config.ap.ssid_hidden = hidden ? 1 : 0;
+    config.ap.max_connection = (uint8_t)maximum_connections;
+    config.ap.beacon_interval = 100;
+    esp_err_t result = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if (result == ESP_OK)
+        result = esp_wifi_set_config(WIFI_IF_AP, &config);
+    if (result != ESP_OK) {
+        (void)esp_wifi_set_mode(WIFI_MODE_STA);
+        bmx_wifi_ap_active = false;
+        return result;
+    }
+    bmx_wifi_ap_active = true;
+    return ESP_OK;
+}
+
+int32_t bmx_esp8266_wifi_stop_access_point(void) {
+    if (!bmx_wifi_initialized) return ESP_ERR_WIFI_NOT_INIT;
+    if (!bmx_wifi_ap_active) return ESP_OK;
+    esp_err_t result = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (result == ESP_OK) bmx_wifi_ap_active = false;
+    return result;
+}
+
+int32_t bmx_esp8266_wifi_access_point_active(void) {
+    return bmx_wifi_ap_active;
+}
+
+int32_t bmx_esp8266_wifi_access_point_client_count(uint32_t *count) {
+    if (!count) return ESP_ERR_INVALID_ARG;
+    if (!bmx_wifi_ap_active) {
+        *count = 0;
+        return ESP_OK;
+    }
+    wifi_sta_list_t stations;
+    esp_err_t result = esp_wifi_ap_get_sta_list(&stations);
+    if (result == ESP_OK) *count = (uint32_t)stations.num;
+    return result;
+}
+
+static uint32_t bmx_wifi_ap_address(int which) {
+    if (!bmx_wifi_initialized || !bmx_wifi_ap_active) return 0;
+    tcpip_adapter_ip_info_t info;
+    if (tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_AP, &info) != ESP_OK)
+        return 0;
+    return which == 0 ? info.ip.addr
+        : which == 1 ? info.netmask.addr : info.gw.addr;
+}
+
+uint32_t bmx_esp8266_wifi_access_point_ipv4_address(void) {
+    return bmx_wifi_ap_address(0);
+}
+
+uint32_t bmx_esp8266_wifi_access_point_ipv4_netmask(void) {
+    return bmx_wifi_ap_address(1);
+}
+
+uint32_t bmx_esp8266_wifi_access_point_ipv4_gateway(void) {
+    return bmx_wifi_ap_address(2);
 }
