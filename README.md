@@ -71,10 +71,29 @@ or the actual executable-containing directories.
 
 The target currently provides the precise embedded collector, managed objects,
 arrays and strings, timing/delay services, standard console output, persistent
-flash storage, GPIO, Wi-Fi station/scan support, TCP/UDP sockets and DNS, board
-profiles, and the complete `bmk` build/upload workflow. Additional hardware
-modules will be layered onto this base rather than pretending ESP8266 is an
-ESP32 variant.
+flash storage, GPIO, ADC, PWM, hardware random numbers, device identity/reset
+services, Wi-Fi station/scan support, TCP/UDP sockets and DNS, board profiles,
+and the complete `bmk` build/upload workflow. Additional hardware modules will
+be layered onto this base rather than pretending ESP8266 is an ESP32 variant.
+
+## Device, random, ADC, and PWM
+
+Portable applications can import `Embedded.Random`, `Embedded.System.Device`,
+`Embedded.Hardware.ADC`, and `Embedded.Hardware.PWM`. The corresponding
+`ESP8266.*` modules expose the same operations plus useful target details such
+as native heap information, chip revision, the PWM channel number, and the
+shared active-channel count.
+
+The D1 Mini profile names the external analogue input `A0` and represents it as
+pin 17. This is deliberately outside GPIO0–GPIO16 because A0 is not a digital
+GPIO. It is a 10-bit input, but its safe voltage range is board-dependent: bare
+ESP8266 modules commonly expose the chip's lower-voltage input while development
+boards may include a divider. Check the board schematic before applying a
+voltage.
+
+ESP8266 PWM is software-driven and supports up to eight pins, all sharing one
+period. Active pins must therefore use the same requested frequency. Duty uses
+the portable 0–65535 range and the adapter performs the native conversion.
 
 ## Persistent flash storage
 
@@ -157,3 +176,7 @@ Wi-Fi teardown guard.
 `tests/storage_persistence.bmx` covers default and explicit path routing, text
 and binary streams, seek and resize, directories, timestamps, rename/delete,
 unmount/remount, and persistence across device resets.
+
+`tests/random_device_adc_pwm.bmx` covers hardware random data, the MAC-derived
+device identifier, reset/chip information, A0 conversion, and the portable PWM
+lifecycle on the active-low onboard LED.
