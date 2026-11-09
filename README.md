@@ -71,8 +71,8 @@ or the actual executable-containing directories.
 
 The target currently provides the precise embedded collector, managed objects,
 arrays and strings, timing/delay services, standard console output, GPIO,
-Wi-Fi station/scan support, board profiles, and the complete `bmk`
-build/upload workflow. Additional hardware and networking modules will be
+Wi-Fi station/scan support, TCP/UDP sockets and DNS, board profiles, and the
+complete `bmk` build/upload workflow. Additional hardware modules will be
 layered onto this base rather than pretending ESP8266 is an ESP32 variant.
 
 GPIO is available through both `Embedded.Hardware.GPIO` and the target-specific
@@ -100,3 +100,16 @@ events, IPv4 information, disconnect and teardown use the same portable API as
 Pico and ESP32. The ESP8266 adapter is linked only when the Wi-Fi module is
 imported. See `examples/wifi_scan.bmx`; the missing-network regression is
 `tests/wifi_missing_network.bmx`.
+
+Network applications use the standard `BRL.Socket` API. IPv4 DNS, UDP and TCP
+support blocking and nonblocking I/O, listener timeouts, byte-availability
+queries, and deferred readable, writable, accept, close, and error events via
+`BRL.EventQueue`. IPv6 is not exposed because ESP8266 RTOS SDK 3.4 builds lwIP
+without it. Wi-Fi teardown is rejected while a socket is active, preventing
+the network stack from being dismantled beneath live connections.
+
+`tests/socket_loopback.bmx` covers UDP and TCP loopback, listener acceptance,
+payload transfer, byte accounting, and deferred events.
+`tests/socket_failure.bmx` covers timeout behavior, conflicting binds,
+nonblocking empty reads, repeated event registration, socket reuse, and the
+Wi-Fi teardown guard.

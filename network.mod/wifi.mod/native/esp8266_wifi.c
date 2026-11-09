@@ -50,6 +50,9 @@ static volatile bool bmx_wifi_scan_active;
 static volatile bool bmx_wifi_explicit_disconnect;
 static volatile int32_t bmx_wifi_link_status;
 
+extern uint32_t bmx_embedded_net_active_socket_count(void)
+    __attribute__((weak));
+
 static bool bmx_wifi_queue(const BMXESP8266WiFiEvent *event) {
     bool queued = false;
     taskENTER_CRITICAL();
@@ -243,6 +246,8 @@ fail:
 int32_t bmx_embedded_wifi_deinitialize(void) {
     if (!bmx_wifi_initialized) return ESP_OK;
     if (bmx_wifi_scan_active) return ESP_ERR_INVALID_STATE;
+    if (bmx_embedded_net_active_socket_count &&
+            bmx_embedded_net_active_socket_count()) return ESP_ERR_INVALID_STATE;
     esp_err_t result = esp_wifi_stop();
     if (result != ESP_OK) return result;
     (void)esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID,

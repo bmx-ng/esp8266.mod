@@ -58,6 +58,7 @@ idf_component_register(
     REQUIRES esp8266 esp_event freertos newlib nvs_flash pthread tcpip_adapter)
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    BMX_EMBEDDED=1
     BMX_ESP8266=1
     BMX_EMBEDDED_ARENA_SIZE=${BLITZMAX_ESP8266_ARENA_SIZE}
     BMX_EMBEDDED_ARENA_IN_PSRAM=0)
