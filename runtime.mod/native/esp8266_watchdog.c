@@ -1,20 +1,32 @@
 #include <stdint.h>
 
 #include "blitzmax/embedded_watchdog.h"
+#include "esp_attr.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 
 static TimerHandle_t bmx_esp8266_watchdog_timer;
 static uint8_t bmx_esp8266_watchdog_active;
+static uint8_t bmx_esp8266_watchdog_rebooted;
+static RTC_NOINIT_ATTR uint32_t bmx_esp8266_watchdog_marker;
+
+#define BMX_ESP8266_WATCHDOG_MARKER 0xb8266d07u
+
+static void __attribute__((constructor)) bmx_esp8266_watchdog_startup(void) {
+    if (bmx_esp8266_watchdog_marker == BMX_ESP8266_WATCHDOG_MARKER) {
+        bmx_esp8266_watchdog_rebooted = 1;
+        bmx_esp8266_watchdog_marker = 0;
+    }
+}
 
 static void bmx_esp8266_watchdog_expired(TimerHandle_t timer) {
     (void)timer;
-    /* The old SDK has no per-task configurable hardware watchdog. Prevent its
-       normal idle-task feed and let the always-active hardware watchdog issue
-       the reset, preserving the correct reset reason. */
-    portDISABLE_INTERRUPTS();
-    for (;;) { }
+    /* Reprogramming the ESP8266 hardware watchdog for immediate reset leaves
+       it armed across the warm reboot and can create a reset loop.  Retain a
+       one-boot marker instead, then use the SDK's safe restart path. */
+    bmx_esp8266_watchdog_marker = BMX_ESP8266_WATCHDOG_MARKER;
+    esp_restart();
 }
 
 uint32_t bmx_embedded_watchdog_maximum_delay_ms(void) {
@@ -58,5 +70,6 @@ int32_t bmx_embedded_watchdog_is_enabled(void) {
 
 int32_t bmx_embedded_watchdog_caused_reboot(void) {
     esp_reset_reason_t reason = esp_reset_reason();
-    return reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT;
+    return bmx_esp8266_watchdog_rebooted || reason == ESP_RST_TASK_WDT ||
+        reason == ESP_RST_WDT;
 }
