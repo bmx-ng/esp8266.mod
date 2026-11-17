@@ -4,6 +4,8 @@
 *.bin
 *.elf
 *.map
+*.hex
+*.uf2
 sdkconfig
 sdkconfig.old
 build
