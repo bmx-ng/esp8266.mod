@@ -78,6 +78,14 @@ int32_t bmx_embedded_power_set_sleep_gpio_retention(uint32_t pin,
     return BMX_POWER_UNAVAILABLE;
 }
 
+int32_t bmx_embedded_power_set_sleep_gpio_wake(uint32_t pin, int32_t high,
+        int32_t enabled) {
+    (void)pin;
+    (void)high;
+    (void)enabled;
+    return BMX_POWER_UNAVAILABLE;
+}
+
 int32_t bmx_esp8266_power_sleep_until_gpio(uint32_t pin, int32_t high) {
     if (pin > 15u) return BMX_POWER_INVALID_ARGUMENT;
     gpio_int_type_t trigger = high ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL;
