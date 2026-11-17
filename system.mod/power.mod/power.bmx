@@ -21,6 +21,7 @@ Const PowerCapabilitySleepTimer:UInt = $04
 Const PowerCapabilityDormantGPIO:UInt = $08
 Const PowerCapabilityDormantTimer:UInt = $10
 Const PowerCapabilityLowLeakagePins:UInt = $20
+Const PowerCapabilitySleepGPIORetention:UInt = $40
 
 Const ESP8266DeepSleepRFDefault:Int = 0
 Const ESP8266DeepSleepRFCalibrate:Int = 1
@@ -49,6 +50,7 @@ Extern "C"
 	Function DormantSleep:EPowerResult(milliseconds:UInt) = "bmx_embedded_power_dormant_for_ms"
 	Function DormantSleepUntilGPIO:EPowerResult(pin:UInt, edge:Int, high:Int) = "bmx_embedded_power_dormant_until_gpio"
 	Function SetUnusedPinsLowLeakage:EPowerResult(excludeMask:ULong = 0) = "bmx_embedded_power_set_unused_pins_low_leakage"
+	Function SetSleepGPIORetention:EPowerResult(pin:UInt, enabled:Int = True) = "bmx_embedded_power_set_sleep_gpio_retention"
 
 	Rem
 	bbdoc: Returns from light sleep when pin reaches the requested logic level.
